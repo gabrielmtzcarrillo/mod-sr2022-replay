@@ -7,7 +7,7 @@
 Run with uv (installs the lz4 dependency on first use):
 
     uv run tools/srasset.py list    ARCHIVE [-f PATTERN]
-    uv run tools/srasset.py extract ARCHIVE OUTDIR [-f PATTERN]
+    uv run tools/srasset.py extract ARCHIVE OUTDIR [-f PATTERN] [-r]
     uv run tools/srasset.py patch   ARCHIVE SRCDIR            (SRCDIR mirrors the extracted layout)
     uv run tools/srasset.py patch   ARCHIVE -e ENTRY=FILE ... (replace single entries)
     uv run tools/srasset.py status  ARCHIVE
@@ -20,10 +20,12 @@ Archive format (version 17, little endian), as observed in the retail game:
     0x10 u32 entry count   0x14 u32 dir count   0x18 u32 entry+dir table size   0x1C u32 string block size
     0x20 u64 file size     0x28 u64 sum of uncompressed sizes   0x30 u64 sum of stored sizes
     0x38 u64 unix timestamp   0x40 u64 header size (data starts here)
-    0x80 entries, 48 bytes each:  u64 dir_off, data_off, size, comp_size (-1 = stored raw), flags, name_off
+    0x78 entries, 48 bytes each:  u64 name_off, dir_off, data_off, size, comp_size (-1 = stored raw), flags
          (bit 0 of flags = LZ4 frame compressed; data_off is relative to the header size)
-    then 8*(dir count) bytes of dir table, then NUL-terminated strings; *_off index the strings
-    starting 8 bytes before the end of the dir table.
+    then 8*(dir count) bytes of dir table, then NUL-terminated strings; *_off index the strings.
+
+A .str2_pc file is the same archive format (a small one holding a game asset and its dependencies),
+so every command works on it directly; `extract -r` also unpacks .str2_pc files found inside.
 
 Patching never rewrites the archive. Replacement data is appended to the end of the file, stored
 uncompressed, and the entry (plus the three size fields) is updated in place; the old bytes become
@@ -40,6 +42,7 @@ import sys
 MAGIC = 0x51890ACE
 NONE = 0xFFFFFFFFFFFFFFFF
 ENTRY = struct.Struct("<6Q")
+ENTRIES_AT = 0x78
 
 
 class Entry:
@@ -73,11 +76,10 @@ class Archive:
                 struct.unpack_from("<5Q", head, 0x20)
             f.seek(0)
             self.header = bytearray(f.read(self.data_start))
-        base = 0x80 + self.count * ENTRY.size
-        strings = base + 8 * (self.ndirs - 1)
+        strings = ENTRIES_AT + self.count * ENTRY.size + 8 * self.ndirs
         self.entries = []
         for i in range(self.count):
-            d, o, s, c, fl, n = ENTRY.unpack_from(self.header, 0x80 + i * ENTRY.size)
+            n, d, o, s, c, fl = ENTRY.unpack_from(self.header, ENTRIES_AT + i * ENTRY.size)
             e = Entry()
             e.index, e.off, e.size, e.csize, e.flags = i, o, s, c, fl
             e.dir = self._str(strings + d)
@@ -110,6 +112,12 @@ class Archive:
         return data
 
 
+def safe_join(root, entry_path):
+    """Join an archive path under root; ".." parts become "__" so nothing escapes root."""
+    parts = ["__" if p == ".." else p for p in entry_path.split("\\") if p not in ("", ".")]
+    return os.path.join(root, *parts)
+
+
 def sidecar(path):
     return path + ".srpatch.json"
 
@@ -127,11 +135,30 @@ def cmd_extract(a):
     todo = arc.select(a.filter)
     with open(a.archive, "rb") as f:
         for n, e in enumerate(todo, 1):
-            dest = os.path.join(a.outdir, *e.path.split("\\"))
+            dest = safe_join(a.outdir, e.path)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as out:
                 out.write(arc.read(f, e))
             print(f"[{n}/{len(todo)}] {e.path}")
+            if a.recursive:
+                unpack_nested(dest)
+
+
+def unpack_nested(path):
+    """Unpack a Volition archive found inside an extracted file into PATH.d/ (recursively)."""
+    with open(path, "rb") as f:
+        if f.read(4) != struct.pack("<I", MAGIC):
+            return
+    inner = Archive(path)
+    outdir = path + ".d"
+    with open(path, "rb") as f:
+        for e in inner.entries:
+            dest = safe_join(outdir, e.path)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as out:
+                out.write(inner.read(f, e))
+            print(f"    {e.path}")
+            unpack_nested(dest)
 
 
 def cmd_status(a):
@@ -206,7 +233,7 @@ def cmd_patch(a):
             arc.sum_stored += len(data) - old_stored
             e.off, e.size, e.csize = new_off, len(data), NONE
             e.flags &= ~1
-            struct.pack_into("<4Q", arc.header, 0x80 + e.index * ENTRY.size + 8, e.off, e.size, e.csize, e.flags)
+            struct.pack_into("<4Q", arc.header, ENTRIES_AT + e.index * ENTRY.size + 16, e.off, e.size, e.csize, e.flags)
             pos += len(data)
             done += 1
             if e.path not in meta["patched"]:
@@ -229,7 +256,9 @@ def main():
     p = sub.add_parser("list"); p.add_argument("archive"); p.add_argument("-f", "--filter", action="append")
     p.set_defaults(fn=cmd_list)
     p = sub.add_parser("extract"); p.add_argument("archive"); p.add_argument("outdir")
-    p.add_argument("-f", "--filter", action="append"); p.set_defaults(fn=cmd_extract)
+    p.add_argument("-f", "--filter", action="append")
+    p.add_argument("-r", "--recursive", action="store_true", help="also unpack nested archives (.str2_pc) into FILE.d/")
+    p.set_defaults(fn=cmd_extract)
     p = sub.add_parser("patch"); p.add_argument("archive"); p.add_argument("src", nargs="?")
     p.add_argument("-e", "--entry", action="append", help="ENTRY=FILE, entry path as shown by list")
     p.set_defaults(fn=cmd_patch)

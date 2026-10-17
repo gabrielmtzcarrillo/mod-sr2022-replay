@@ -103,13 +103,14 @@ It needs [uv](https://docs.astral.sh/uv/); the `lz4` dependency is installed aut
 ```bat
 uv run tools\srasset.py list    "...\sr5\data\sr_boot\sr_boot.vpp_pc" -f "*scribe*"
 uv run tools\srasset.py extract "...\sr_boot.vpp_pc" out -f "*ui_launcher*"
+uv run tools\srasset.py extract "...\sr_boot.vpp_pc" out -r -f "*ui_launcher*"   # -r also unpacks .str2_pc
 uv run tools\srasset.py patch   "...\sr_boot.vpp_pc" out        # folder mirrors the extracted layout
 uv run tools\srasset.py patch   "...\sr_boot.vpp_pc" -e "data\sr_boot\...\file.ext=local.bin"
 uv run tools\srasset.py restore "...\sr_boot.vpp_pc"
 ```
 
 Patching appends the new data (stored uncompressed) to the archive and updates the entry in place, so multi-GB archives are
-not rewritten; the original header and size are kept in `<archive>.srpatch.json` for `restore`. Inner formats (`.str2_pc`
-streams, textures, Vint documents) are extracted as raw files, not unpacked further. The header's id field at 0x08 is not
+not rewritten; the original header and size are kept in `<archive>.srpatch.json` for `restore`. `.str2_pc` files are the same archive format and work with every command (or use `extract -r`); the files inside them
+(textures, Vint documents, scribe text) are extracted raw. The header's id field at 0x08 is not
 recomputed (its algorithm is unknown); patched archives have not been tried in-game yet. Back up the game folder first and
 use it offline only. A Steam "verify files" restores the originals.
