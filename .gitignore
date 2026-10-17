@@ -1,0 +1,6 @@
+*.obj
+*.lib
+*.exp
+*.dll
+*.addon64
+work/
