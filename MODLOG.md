@@ -36,7 +36,8 @@ Toolkit: D:\git\universal-modder (cloned, `bin\um.cmd`; uv installed via winget,
 
 ## Install route change (dinput8 proxy failed)
 - dinput8.dll proxy in sr5\ made SRLauncher.exe crash (ucrtbase 0xc0000005 at +0xed3d7) -> "Error starting the game", even in proxy-only mode (no hook). Likely clashes with ReShade, which hooks dinput8. Removed.
-- New route: ReShade add-on (ReShade 6.8 already in sr5\ as dxgi.dll, AddonPath=.\). src\replay_addon.cpp -> sr2022_replay.addon64 (built with build_addon.bat, SDK in D:\git\reshade-sdk, /std:c++17). Inert in non-SaintsRow* processes. Same hotkeys; ImGui overlay not used yet (imgui version must match ReShade's).
+- New route: ReShade add-on (ReShade 6.8 already in sr5\ as dxgi.dll, AddonPath=.\). Build with `build.bat [/install <sr5 dir>]` (auto-finds VS via vswhere, vcpkg MinHook, ReShade SDK; see script header). src\replay_addon.cpp -> sr2022_replay.addon64. Inert in non-SaintsRow* processes.
+eplay_addon.cpp -> sr2022_replay.addon64. Inert in non-SaintsRow* processes.
 
 ## Status after first in-game test
 - Add-on module was being unloaded by ReShade while my worker thread ran -> crash in `sr2022_replay.addon64_unloaded`. Fixed: pin module (GET_MODULE_HANDLE_EX_FLAG_PIN) + once-mutex.

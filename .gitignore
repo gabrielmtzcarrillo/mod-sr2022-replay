@@ -4,3 +4,4 @@
 *.dll
 *.addon64
 work/
+build/
