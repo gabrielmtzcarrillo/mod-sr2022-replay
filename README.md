@@ -85,6 +85,7 @@ anything is hooked. Reverse-engineering notes, offsets and dead ends are in [MOD
 | Path | Contents |
 |---|---|
 | `src/replay_addon.cpp` | the ReShade add-on (hook, registry reader, overlay) |
+| `tools/srasset.py` | archive extractor/patcher for the game's `.vpp_pc` files (see below) |
 | `build.bat` | build/install script |
 | `MODLOG.md` | engineering journal: findings, offsets, failed approaches |
 | `src/replay.cpp`, `src/dinput8.def` | abandoned `dinput8.dll` proxy attempt (crashed the launcher next to ReShade); not built |
@@ -93,3 +94,22 @@ anything is hooked. Reverse-engineering notes, offsets and dead ends are in [MOD
 
 Unofficial fan project, not affiliated with Deep Silver or Volition. You need your own copy of the game. The add-on works only
 offline/single-player and does not bypass any protection.
+
+## Asset extractor / patcher
+
+`tools/srasset.py` lists, extracts and patches the game's `data\*\*.vpp_pc` archives (format notes are in the script header).
+It needs [uv](https://docs.astral.sh/uv/); the `lz4` dependency is installed automatically.
+
+```bat
+uv run tools\srasset.py list    "...\sr5\data\sr_boot\sr_boot.vpp_pc" -f "*scribe*"
+uv run tools\srasset.py extract "...\sr_boot.vpp_pc" out -f "*ui_launcher*"
+uv run tools\srasset.py patch   "...\sr_boot.vpp_pc" out        # folder mirrors the extracted layout
+uv run tools\srasset.py patch   "...\sr_boot.vpp_pc" -e "data\sr_boot\...\file.ext=local.bin"
+uv run tools\srasset.py restore "...\sr_boot.vpp_pc"
+```
+
+Patching appends the new data (stored uncompressed) to the archive and updates the entry in place, so multi-GB archives are
+not rewritten; the original header and size are kept in `<archive>.srpatch.json` for `restore`. Inner formats (`.str2_pc`
+streams, textures, Vint documents) are extracted as raw files, not unpacked further. The header's id field at 0x08 is not
+recomputed (its algorithm is unknown); patched archives have not been tried in-game yet. Back up the game folder first and
+use it offline only. A Steam "verify files" restores the originals.
