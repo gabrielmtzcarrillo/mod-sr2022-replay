@@ -1,174 +1,78 @@
 # SR2022 Replay
 
-Two experimental tools for replaying content in **Saints Row (2022)**, single-player/offline:
-
-1. **Cutscene Replay**: a [ReShade](https://reshade.me) add-on that replays the game's story cinematics from an overlay
-   menu or numpad hotkeys.
-2. **Phone "Replay" app**: a patch that adds a Replay tile to the in-game phone, listing completed missions you can
-   start again (see [below](#phone-replay-app)).
-
-The add-on does not ship or extract any game files. It reads the game's own cinematic registry from memory and calls the game's
-own `cinematic_play` code path (the same one its developer console command uses).
-
-> **Status: experimental.** The user confirmed cutscene playback works. The registry contains 105 entries;
-> test/default entries are hidden because placeholders such as `cin_default_city` can hang on a loading screen.
+An in-game **Replay** phone app for Saints Row (2022), with a general archive patcher for reusable mods. Replay uses the native Missions screen to display completed, replayable missions with banners and details. It does not require ReShade or a native addon.
 
 ## Requirements
 
-### To run it
-- Windows 10/11 x64
-- Saints Row (2022), Steam build whose `SaintsRow_DX12.exe` has `SizeOfImage 0x5f6a000` (PE timestamp `0x64ecd696`).
-  Only the **DX12** executable is supported; on any other build or exe the add-on disables itself and writes why to
-  `sr2022_replay.log`.
-- ReShade 6.x with add-on support, installed in the game's `sr5` folder (as `dxgi.dll`) and `AddonPath` pointing at it.
-  The ReShade overlay tab needs ReShade's Dear ImGui to match the SDK's (1.92.x); if it does not, the numpad hotkeys still work.
-- Play offline. Don't use this in co-op/online sessions.
+- Windows and your own Saints Row (2022) installation.
+- [uv](https://docs.astral.sh/uv/), which installs the Python dependencies automatically.
+- Close the game before applying or restoring patches. Use single-player/offline mode.
 
-### To build it
-- Visual Studio or Build Tools with the **Desktop development with C++** workload (found via `vswhere`; tested with VS 2022)
-- [vcpkg](https://github.com/microsoft/vcpkg) (on `PATH`, or via `VCPKG_ROOT` / `/vcpkg`); MinHook (`x64-windows-static`) is installed automatically
-- Git and an internet connection on the first build (clones the [ReShade SDK](https://github.com/crosire/reshade) and its Dear ImGui submodule next to this repo, unless `/sdk` or `RESHADE_SDK` points at an existing checkout)
-
-## Building
-
-From a normal command prompt in the repo folder:
+## Install Replay
 
 ```bat
-build.bat
+patch_phone.bat "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
 ```
 
-The add-on is written to `build\sr2022_replay.addon64`. To build and copy it into the game in one step:
+Open the phone, select Replay, open a completed mission's details, and select Replay. Only completed missions allowed by the game's replay restrictions are listed. Some missions use an objective marker rather than starting directly.
+
+Undo with:
 
 ```bat
-build.bat /install "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+restore_phone.bat "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
 ```
 
-| Option | Meaning | Default |
-|---|---|---|
-| `/install GAME_DIR` | copy the add-on into the folder containing `SaintsRow_DX12.exe` | don't install |
-| `/vcpkg DIR` | vcpkg checkout | `%VCPKG_ROOT%`, else `vcpkg.exe` on `PATH` |
-| `/sdk DIR` | `crosire/reshade` checkout (needs `deps\imgui`) | `%RESHADE_SDK%`, else `..\reshade-sdk` |
-| `/out DIR` | output folder | `build\` |
-| `/debug` | debug build | release |
+Both shortcuts use `SR5_DIR` when no directory is supplied. Back up saves before trying mission restarts. The user confirmed the phone tile works; the later native Missions presentation and completed-mission restart still need separate in-game confirmation. Cutscene replay is not implemented in this phone patch.
 
-A harmless `"vswhere.exe" no se reconoce...`-style line may be printed by Visual Studio's own `vcvars64.bat`.
+## General patcher
 
-## Installing manually
+```bat
+path.bat prepare patches\replay.json "GAME_DIR" --pristine
+path.bat status patches\replay.json "GAME_DIR"
+path.bat apply patches\replay.json "GAME_DIR"
+path.bat restore patches\replay.json "GAME_DIR"
+```
 
-Copy `sr2022_replay.addon64` into the `sr5` folder (next to `SaintsRow_DX12.exe` and ReShade's `dxgi.dll`), then start the
-game through the normal launcher. To uninstall, delete that file.
+`GAME_DIR` is the folder containing the game executable. `patch.bat` and `path.bat` are equivalent. Commands can also be run with `uv run tools/patcher.py`.
 
-## Using it
+`prepare` builds and checks replacements without changing game files. `--pristine` uses the original directory retained by an existing undo sidecar. `apply` refuses already-patched archives. To update this patch, restore it first, then apply the new version.
 
-1. Launch the DX12 game offline and load into the open world (not in a mission).
-2. Open the ReShade overlay (default **Home**) and pick the **Cutscene Replay** tab, then click **Play** next to a cutscene.
-3. **Cancel / skip** calls the game's own cinematic skip if something hangs. Use *Refresh list* if the list is empty.
+`restore` reverts **all modifications recorded in the archive's `.srpatch.json`**, not just the selected manifest. Inspect status before restoring unrelated mods and keep the undo sidecar beside its archive.
 
-Numpad hotkeys (work without the overlay):
+See [patch definitions and external Lua](patches/README.md). Stream-managed bundles need compact repacking and matching `.strh_pc` metadata; the Replay definition enables both. The outer archive remains append-only and undoable.
 
-| Key | Action |
-|---|---|
-| Numpad 1 | refresh the cinematic list |
-| Numpad 4 / 6 | previous / next |
-| Numpad 5 | play the selected cinematic |
-| Numpad 0 | cancel / skip |
+## Inspect archives
 
-Names look like `cin3d_ct_bond_in` (story beats), `cin3d_mh_*` (Boothill), `cin2d_*` / `*_bink_container` (video-based).
-The full list is written to `sr5\sr2022_replay.log` on startup.
+```bat
+uv run tools/srasset.py list "ARCHIVE" -f "*example*"
+uv run tools/srasset.py extract "ARCHIVE" work -r -f "*example*"
+```
 
-## How it works
+## Validation
 
-The add-on waits until the game's code and cinematic system are up, then installs a [MinHook](https://github.com/TsudaKageyu/minhook)
-detour on the game's per-frame cinematic tick. Requests from the UI and hotkeys are executed inside that tick, i.e. on the
-game thread. Function addresses are fixed offsets for the supported build and are verified against byte signatures before
-anything is hooked. Reverse-engineering notes, offsets and dead ends are in [MODLOG.md](MODLOG.md).
+```bat
+uv run tools/test_patcher.py
+uv run tools/test_stream_index.py
+uv run tools/verify_phone_app.py "GAME_DIR"
+uv run tools/verify_phone_app.py "GAME_DIR" --installed
+```
+
+Replay verification checks Lua behavior with engine stubs. Installed checks also compare script bytes, archive CRCs, stream layouts and shared Lua source sizes. These checks do not replace an in-game test.
 
 ## Layout
 
 | Path | Contents |
-|---|---|
-| `src/replay_addon.cpp` | the ReShade add-on (hook, registry reader, overlay) |
-| `tools/srasset.py` | archive extractor/patcher for the game's `.vpp_pc` files (see [below](#asset-extractor--patcher)) |
-| `tools/patcher.py`, `patch.bat` | general manifest-driven nested archive patcher |
-| `patches/replay.json` | experimental Replay app patch definition |
-| `tools/build_phone_app.py` | compatibility wrapper for the general patcher |
-| `patch_phone.bat`, `restore_phone.bat` | install / undo the phone Replay app |
-| `build.bat` | build/install script for the ReShade add-on |
-| `CREDITS.md` | third-party components |
-| `MODLOG.md` | engineering journal: findings, offsets, failed approaches |
+| --- | --- |
+| `patch.bat`, `path.bat` | General patcher and command alias |
+| `patch_phone.bat`, `restore_phone.bat` | Replay installation and restore shortcuts |
+| `patches/replay.json`, `patches/replay/` | Replay definition and external Lua |
+| `patches/README.md` | Manifest schema and usage |
+| `tools/patcher.py` | Preparation, application and verification |
+| `tools/srasset.py` | Archive reading, extraction, repacking and restore |
+| `tools/stream_index.py` | Validated v33 stream-index updates |
+| `tools/verify_phone_app.py` | Replay-specific checks |
+| `tools/test_patcher.py`, `tools/test_stream_index.py` | General regression tests |
+| `tools/build_phone_app.py` | Legacy CLI alias |
+| `MODLOG.md` | Implementation notes |
 
-## Asset extractor / patcher
-
-Use the general patcher for repeatable mods defined in JSON. It discovers matching files in nested bundles, applies text edits or binary replacements, checks match counts, and verifies installed bytes and archive CRCs. Patch definitions contain the mod-specific edits; the patcher contains no phone logic.
-
-`path.bat` is an alias for `patch.bat`. Definitions can reference external Lua with `replace_file`, `find_file`, and `append_file`, or use `replacement_file` for a complete file. Replay's Lua is stored in `patches/replay/`.
-
-Replay also selects compact nested archives and updates the game's `.strh_pc` stream index. Updating archive entry offsets alone left the original sequential stream sizes intact, so earlier successful file checks did not establish that the engine would load the edited scripts. The installed verifier now checks stream layouts and shared Lua sizes too.
-
-```bat
-patch.bat prepare patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --pristine
-patch.bat apply patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
-patch.bat status patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
-patch.bat restore patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
-```
-
-`prepare` leaves game files unchanged. `apply` refuses already-patched archives; `restore` undoes all recorded modifications in the selected archive. See [manifest format and examples](patches/README.md). The user confirmed the Replay app works in-game after the stream-index correction.
-
-`tools/srasset.py` lists, extracts and patches the game's `data\*\*.vpp_pc` archives (format notes are in the script header).
-It needs [uv](https://docs.astral.sh/uv/); the `lz4` dependency is installed automatically.
-
-```bat
-uv run tools\srasset.py list    "...\sr5\data\sr_boot\sr_boot.vpp_pc" -f "*scribe*"
-uv run tools\srasset.py extract "...\sr_boot.vpp_pc" out -f "*ui_launcher*"
-uv run tools\srasset.py extract "...\sr_boot.vpp_pc" out -r -f "*ui_launcher*"   # -r also unpacks .str2_pc
-uv run tools\srasset.py patch   "...\sr_boot.vpp_pc" out        # folder mirrors the extracted layout
-uv run tools\srasset.py patch   "...\sr_boot.vpp_pc" -e "data\sr_boot\...\file.ext=local.bin"
-uv run tools\srasset.py restore "...\sr_boot.vpp_pc"
-```
-
-Patching appends the new data (stored uncompressed) to the archive and updates the entry in place, so multi-GB archives are
-not rewritten; the original header and size are kept in `<archive>.srpatch.json` for `restore`. `.str2_pc` files are the same archive format and work with every command (or use `extract -r`); the files inside them
-(textures, Vint documents, scribe text) are extracted raw. The header's id field at 0x08 is a CRC-32 of header bytes 0x0C..0x77
-(found by decompiling the game's archive check) and is recomputed on every patch; patched archives have not been confirmed in-game yet. Back up the game folder first and
-use it offline only. A Steam "verify files" restores the originals.
-
-## Phone "Replay" app
-
-> **Status: experimental; user confirmed the app works in-game.** Compact bundles and matching stream-index records
-> resolved the missing app. Completed-mission restart behavior has not been separately confirmed.
-
-The phone UI is Lua inside `data\sr_vanguard\sr_vanguard.vpp_pc`. The `patches/replay.json` definition adds a separate **Replay** tile to the
-phone's home screen, with its own phone state using the native **Missions** screen in a "replay" mode. Share and Cheats keep their stock entries.
-Replay shows completed, replayable missions with the game's mission list, banners and detail panels. Open a mission's details and select **Replay** to call the game's own
-`mission_start_from_saintsbook`. It does not ship any game files: it edits your local copy.
-
-```bat
-patch_phone.bat   "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
-restore_phone.bat "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
-```
-
-The patch updates the phone object, Missions screen, Missions panel, phone slate, and default player camera bundles, along with the stream index. The normal Missions app retains its stock filtering and completed-mission selection guard. Replay handles an empty list with a disabled placeholder row.
-The phone menu also handles a second page when Replay pushes it past 16 visible apps. The new Missions presentation still needs an in-game check.
-
-To build without installing, or run Lua checks against your game files:
-
-```bat
-uv run tools\patcher.py prepare patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --pristine
-uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
-uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --installed
-```
-
-Verification executes menu construction, selection and pagination with engine stubs. `--installed` also checks script bytes, archive CRCs, stream layouts and shared Lua sizes; it does not replace an in-game test.
-
-- Both scripts take the folder containing `SaintsRow_DX12.exe` (or read `SR5_DIR`), refuse to run while the game is open,
-  and need [uv](https://docs.astral.sh/uv/) (`winget install astral-sh.uv`).
-- Patching is append-only (see "Asset extractor / patcher" above); `restore_phone.bat` puts the archive back to its original bytes.
-  Steam's "verify files" also reverts it, and a game update that changes the Lua makes the patch refuse to apply.
-- Back up your saves first. Starting an already-completed mission may behave unexpectedly or affect progress.
-- Known gaps: labels are plain text rather than localization keys (they may render blank); cutscenes are not in the phone
-  app yet, they stay in the ReShade add-on.
-
-## Disclaimer
-
-Unofficial fan project, not affiliated with Deep Silver or Volition. You need your own copy of the game. These tools work only
-offline/single-player and does not bypass any protection.
+No game files are distributed. This is an unofficial fan project, unaffiliated with Deep Silver or Volition.

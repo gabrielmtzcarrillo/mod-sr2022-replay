@@ -1,8 +1,6 @@
-*.obj
-*.lib
-*.exp
-*.dll
-*.addon64
+__pycache__/
+*.py[cod]
+.venv/
 work/
 build/
-__pycache__/
+/build
