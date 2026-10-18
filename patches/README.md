@@ -70,6 +70,7 @@ Replay uses these settings. The earlier append-only nested patch left the index 
 
 ```bat
 uv run tools/test_patcher.py
+uv run tools/test_stream_index.py
 ```
 
 Synthetic fixtures cover nested and compressed archives, duplicate discovery, text and binary replacement, unchanged files, exact restoration, and rejection before game mutation.

@@ -15,9 +15,45 @@ from pathlib import Path
 
 from lupa import LuaRuntime
 
-import build_phone_app as phone
+import patcher
 import srasset
 
+
+MANIFEST = Path(__file__).resolve().parent.parent / "patches/replay.json"
+DEFINITION = patcher.load_manifest(MANIFEST)
+PHONE_RULE, MISSIONS_RULE, PANEL_RULE = DEFINITION["rules"]
+OBJ = "data\\sr_vanguard\\interface\\objects\\"
+PHONE_STR2 = OBJ + "vdo_phone.vintdoc_pc.str2_pc"
+MISSIONS_STR2 = OBJ + "vdo_phone_missions.vintdoc_pc.str2_pc"
+PANEL_STR2 = OBJ + "vdo_phone_missions_panel.vintdoc_pc.str2_pc"
+SLATE_STR2 = "data\\sr_vanguard\\interface\\slates\\slate_phone.vintdoc_pc.str2_pc"
+CAMERA_STR2 = "data\\sr_vanguard\\spawnables\\camera\\game_default_player_camera.cprefab_pc.str2_pc"
+PHONE_STATE = next(patcher.text_value(e, "replace", MANIFEST.parent) for e in PHONE_RULE["edits"] if patcher.text_value(e, "find", MANIFEST.parent) == "\tself.states = states\n")
+
+
+def edit_phone(text):
+    return patcher.transform(text.encode(), PHONE_RULE, MANIFEST.parent).decode()
+
+
+def edit_missions(text):
+    return patcher.transform(text.encode(), MISSIONS_RULE, MANIFEST.parent).decode()
+
+
+def edit_panel(text):
+    return patcher.transform(text.encode(), PANEL_RULE, MANIFEST.parent).decode()
+
+
+def edit_lua(raw, edit):
+    return edit(raw.decode()).encode()
+
+
+def read_entry(archive_path, entry_path, pristine=False):
+    source = Path(archive_path)
+    sidecar = Path(srasset.sidecar(str(source)))
+    header = bytes.fromhex(json.loads(sidecar.read_text())["orig_header"]) if pristine and sidecar.exists() else None
+    archive = srasset.Archive(source, header=header)
+    with source.open("rb") as stream:
+        return archive.read(stream, next(e for e in archive.entries if e.path.lower() == entry_path.lower()))
 
 def function(text, name):
     return re.search(r"^function " + re.escape(name) + r"\(.*?^end\s*$", text, re.M | re.S)[0]
@@ -107,55 +143,44 @@ assert(displayed[1].btn_text_string=="Replay")
 def verify(game, installed=False):
     archive = Path(game) / "data/sr_vanguard/sr_vanguard.vpp_pc"
     with tempfile.TemporaryDirectory(prefix="srphone_verify_") as folder:
-        # The append-only patch retains pristine data. Read its original directory
-        # from the undo sidecar without restoring or otherwise touching the game.
-        header_file = Path(folder) / "header.vpp_pc"
-        sidecar = Path(str(archive) + ".srpatch.json")
-        if sidecar.exists():
-            header_file.write_bytes(bytes.fromhex(json.loads(sidecar.read_text())["orig_header"]))
-            arc = srasset.Archive(header_file)
-        else:
-            arc = srasset.Archive(archive)
-        with archive.open("rb") as stream:
-            entry = next(e for e in arc.entries if e.path == phone.PHONE_STR2)
-            inner_file = Path(folder) / "phone.str2_pc"
-            inner_file.write_bytes(arc.read(stream, entry))
+        inner_file = Path(folder) / "phone.str2_pc"
+        inner_file.write_bytes(read_entry(str(archive), PHONE_STR2, pristine=True))
         inner = srasset.Archive(inner_file)
         with inner_file.open("rb") as stream:
             sources = {e.name: inner.read(stream, e) for e in inner.entries if e.name in ("vdo_phone.lua", "vdo_phone_missions.lua", "vdo_phone_missions_panel.lua")}
 
         lua = LuaRuntime(unpack_returned_tuples=True)
-        patched = phone.edit_lua(sources["vdo_phone.lua"], phone.edit_phone).decode().replace("\r\n", "\n")
-        missions = phone.edit_lua(sources["vdo_phone_missions.lua"], phone.edit_missions).decode().replace("\r\n", "\n")
-        panel = phone.edit_lua(sources["vdo_phone_missions_panel.lua"], phone.edit_panel).decode().replace("\r\n", "\n")
+        patched = edit_lua(sources["vdo_phone.lua"], edit_phone).decode().replace("\r\n", "\n")
+        missions = edit_lua(sources["vdo_phone_missions.lua"], edit_missions).decode().replace("\r\n", "\n")
+        panel = edit_lua(sources["vdo_phone_missions_panel.lua"], edit_panel).decode().replace("\r\n", "\n")
         compile_lua = lua.eval("function(s) local f,e=load(s); assert(f,e) end")
         compile_lua(patched)
         compile_lua(missions)
         compile_lua(panel)
         if installed:
             import stream_index
-            index = phone.read_entry(str(archive), phone.DEFINITION["stream_index"].replace("/", "\\"))
+            index = read_entry(str(archive), DEFINITION["stream_index"].replace("/", "\\"))
             current = srasset.Archive(archive)
             assert struct.unpack_from("<I", current.header, 8)[0] == srasset.header_crc(current.header)
             checked = 0
-            for container in (phone.CAMERA_STR2, phone.SLATE_STR2, phone.PHONE_STR2, phone.MISSIONS_STR2, phone.PANEL_STR2):
+            for container in (CAMERA_STR2, SLATE_STR2, PHONE_STR2, MISSIONS_STR2, PANEL_STR2):
                 nested_file = Path(folder) / "check.str2_pc"
                 pristine_file = Path(folder) / "original.str2_pc"
-                nested_file.write_bytes(phone.read_entry(str(archive), container))
-                pristine_file.write_bytes(phone.read_entry(str(archive), container, pristine=True))
+                nested_file.write_bytes(read_entry(str(archive), container))
+                pristine_file.write_bytes(read_entry(str(archive), container, pristine=True))
                 nested = srasset.Archive(nested_file)
                 # This catches the old patch's false positive: readable scripts
                 # alone are insufficient if the engine streams using stale sizes.
                 stream_index.bind_bundle(index, container, nested)
                 assert struct.unpack_from("<I", nested.header, 8)[0] == srasset.header_crc(nested.header)
-                for name, edit in (("vdo_phone.lua", phone.edit_phone), ("vdo_phone_missions.lua", phone.edit_missions), ("vdo_phone_missions_panel.lua", phone.edit_panel), ("vdo_cheat_app.lua", None)):
+                for name, edit in (("vdo_phone.lua", edit_phone), ("vdo_phone_missions.lua", edit_missions), ("vdo_phone_missions_panel.lua", edit_panel), ("vdo_cheat_app.lua", None)):
                     entries = [e for e in nested.entries if e.name == name]
                     if not entries:
                         continue
                     path = entries[0].path
-                    raw = phone.read_entry(str(pristine_file), path)
-                    actual = phone.read_entry(str(nested_file), path)
-                    assert actual == (phone.edit_lua(raw, edit) if edit else raw), (container, name)
+                    raw = read_entry(str(pristine_file), path)
+                    actual = read_entry(str(nested_file), path)
+                    assert actual == (edit_lua(raw, edit) if edit else raw), (container, name)
                     checked += edit is not None
                     compile_lua(actual.decode())
                     stream_index.update_lua_resource_size(index, path, len(actual), len(actual))
@@ -245,7 +270,7 @@ states = {
  [PHONE_ROOT_MENU]={transitions_to={}}
 }
 ''')
-        lua.execute(phone.PHONE_STATE)
+        lua.execute(PHONE_STATE)
         lua.execute('''
 assert(states[PHONE_REPLAY] ~= states[PHONE_MISSIONS])
 assert(states[PHONE_REPLAY].input_vdos ~= states[PHONE_MISSIONS].input_vdos)

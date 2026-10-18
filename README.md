@@ -10,9 +10,8 @@ Two experimental tools for replaying content in **Saints Row (2022)**, single-pl
 The add-on does not ship or extract any game files. It reads the game's own cinematic registry from memory and calls the game's
 own `cinematic_play` code path (the same one its developer console command uses).
 
-> **Status: experimental.** The hook installs and the list of cinematics is read correctly (105 entries). Replaying real
-> story cutscenes from free roam has not been verified yet; the placeholder `cin_default_city` hangs on a loading
-> screen, which is why the menu hides it and offers a Cancel button.
+> **Status: experimental.** The user confirmed cutscene playback works. The registry contains 105 entries;
+> test/default entries are hidden because placeholders such as `cin_default_city` can hang on a loading screen.
 
 ## Requirements
 
@@ -97,7 +96,6 @@ anything is hooked. Reverse-engineering notes, offsets and dead ends are in [MOD
 | `build.bat` | build/install script for the ReShade add-on |
 | `CREDITS.md` | third-party components |
 | `MODLOG.md` | engineering journal: findings, offsets, failed approaches |
-| `src/replay.cpp`, `src/dinput8.def` | abandoned `dinput8.dll` proxy attempt (crashed the launcher next to ReShade); not built |
 
 ## Asset extractor / patcher
 
@@ -160,7 +158,7 @@ uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr
 uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --installed
 ```
 
-Verification executes menu construction, selection and pagination with engine stubs; it does not establish that the app works in the running game.
+Verification executes menu construction, selection and pagination with engine stubs. `--installed` also checks script bytes, archive CRCs, stream layouts and shared Lua sizes; it does not replace an in-game test.
 
 - Both scripts take the folder containing `SaintsRow_DX12.exe` (or read `SR5_DIR`), refuse to run while the game is open,
   and need [uv](https://docs.astral.sh/uv/) (`winget install astral-sh.uv`).

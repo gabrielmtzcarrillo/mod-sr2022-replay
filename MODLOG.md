@@ -1,5 +1,11 @@
 # MODLOG: Saints Row (2022) cutscene replay
 
+## Cleanup (2026-10-17)
+- Removed abandoned dinput8 proxy sources; Git history retains the failed approach.
+- Removed phone-loading investigation probes from the addon: periodic memory scans, numpad-7/UI scan controls, static archive offsets, and file-I/O/mapping API hooks. Cinematic playback, cancellation, normal logging, overlay and hotkeys remain.
+- Moved Replay verification helpers out of the legacy CLI wrapper; the wrapper now only translates old commands to the general patcher. Phone batch wrappers share patch.bat for runtime lookup and the patcher's process checks.
+- Updated current documentation and retained the historical investigation notes. No Lua patch behavior or installed game archives changed during cleanup.
+
 ## Native Missions interface for Replay (2026-10-17)
 - Replay now clones PHONE_MISSIONS with independent mutable state and streams Vdo_phone_missions. Its callbacks use the native close-app/close-phone contract.
 - Replaced cheat-screen edits with replay-mode edits in vdo_phone_missions.lua and vdo_phone_missions_panel.lua. Reuses native data entries, mission banners/details, input and hint bar; filters the native tree to completed replayable missions. Empty data yields a disabled native header row.
