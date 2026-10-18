@@ -1,21 +1,21 @@
 	self.states = states
 
-	-- SR2022_REPLAY_APP: phone state for the Replay app (same screen as the cheat app, in replay mode)
-	if states[PHONE_CHEAT] ~= nil and states[PHONE_ROOT_MENU] ~= nil then
+	-- SR2022_REPLAY_APP: a separate state using the native Missions screen.
+	if states[PHONE_MISSIONS] ~= nil and states[PHONE_ROOT_MENU] ~= nil then
 		local replay_state = {}
-		for k, v in pairs(states[PHONE_CHEAT]) do replay_state[k] = v end
-		-- State manager tables must not be shared with Cheats.
+		for k, v in pairs(states[PHONE_MISSIONS]) do replay_state[k] = v end
+		-- State manager tables must not be shared with Missions.
 		replay_state.input_vdos = {}
 		replay_state.transitions_to = {}
-		for k, v in pairs(states[PHONE_CHEAT].transitions_to) do replay_state.transitions_to[k] = v end
+		for k, v in pairs(states[PHONE_MISSIONS].transitions_to) do replay_state.transitions_to[k] = v end
 		replay_state.on_enter = self.replay_app_on_enter
 		replay_state.stream_data = {
-			vdo_name = "Vdo_cheat_app",
+			vdo_name = "Vdo_phone_missions",
 			vdo_group_h = self.portrait_grp_h,
 			prepare_args = {{
 				self = self,
-				back_cb = self.replay_app_back,
-				select_cb = self.cheat_app_on_select,
+				close_app_cb = self.replay_app_back,
+				close_phone_cb = self.close_phone,
 				mode = "replay",
 			}},
 		}

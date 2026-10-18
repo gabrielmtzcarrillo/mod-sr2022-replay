@@ -23,6 +23,87 @@ def function(text, name):
     return re.search(r"^function " + re.escape(name) + r"\(.*?^end\s*$", text, re.M | re.S)[0]
 
 
+def verify_missions(lua, missions, panel):
+    lua.execute('''
+Vdo_phone_missions = {}
+Vdo_phone_missions_panel = {}
+MISSIONS_GAMEPLAY_TYPES = {MISSION="mission", ROOTCATEGORY="root_category", HEADER="header", CHALLENGE_PACK="challenge_pack"}
+gml_check_default_param = function(v) return v end
+function info(id, completed, forbidden, direct)
+    return {get_handle=function() return id end, completed=completed, direct=direct,
+        m_cannot_be_replayed={get_bool=function() return forbidden end}}
+end
+local function field(value)
+    return {get_number=function() return value end, get_handle=function() return value end,
+        get_filename=function() return value end}
+end
+vlib_info_object.get_object = function()
+    return {m_sort_order=field(0),m_display_string=field("Completed missions"),
+        m_icon=field("native icon"),m_banner=field("native banner"),m_description=field("native description")}
+end
+mission_is_complete = function(m) return m.completed end
+mission_is_start_from_saintsbook = function(m) return m.direct end
+mission_start_from_saintsbook = function(m) started=m:get_handle() end
+hud_oi_set_unselected = function() unselected=true end
+hud_oi_from_gameplay_info = function(id) return id+100 end
+hud_oi_set_selected = function(id) marker=id end
+gml_audio_play = function() end
+''')
+    for name in ("prepare", "build_data", "replay_data_tree", "set_hints"):
+        lua.execute(function(missions, "Vdo_phone_missions:"+name))
+    for name in ("_details_select", "set_details_hints"):
+        lua.execute(function(panel, "Vdo_phone_missions_panel:"+name))
+    lua.execute('''
+local p=setmetatable({refresh_new_counts=function() end}, {__index=Vdo_phone_missions})
+local eligible={type="mission",completed=true,replayable=true,mission_info=info(1,true,false,true),label="Native title",saintsbook_post={}}
+local forbidden={type="mission",completed=true,replayable=false,mission_info=info(2,true,true,true)}
+local unfinished={type="mission",completed=false,replayable=false,mission_info=info(3,false,false,true)}
+local stock={{children={eligible,forbidden,unfinished,{type="challenge_pack",completed=true}}}}
+missions_build_data_tree=function() return stock end
+p:prepare({mode="replay"})
+p:build_data()
+assert(#p.data_tree==1 and #p.data_tree[1].children==1)
+assert(p.data_tree[1].children[1]==eligible, "lost native detail data")
+assert(p.data_tree[1].banner=="native banner")
+assert(#stock[1].children==4, "mutated stock tree")
+p:prepare({})
+p:build_data()
+assert(p.replay_mode==false and p.data_tree==stock, "stock Missions changed")
+local empty=p:replay_data_tree({})
+assert(#empty==1 and empty[1].children[1].type=="header")
+
+local closed=false
+local container={replay_mode=true,close_phone=function() closed=true end,
+    set_hints=function(_, hints) recorded_hints=hints end}
+local details=setmetatable({container=container,detail_params=eligible}, {__index=Vdo_phone_missions_panel})
+details:set_details_hints()
+assert(recorded_hints.replay and recorded_hints.back)
+details:_details_select()
+assert(started==1 and unselected and closed)
+started=nil;closed=false;unselected=false
+details.detail_params=forbidden
+details:_details_select()
+assert(started==nil and not closed)
+details.detail_params=unfinished
+details:_details_select()
+assert(started==nil and not closed)
+details.detail_params=eligible
+container.replay_mode=false
+details:_details_select()
+assert(started==nil and not closed, "stock completed guard bypassed")
+container.replay_mode=true
+local area={type="mission",completed=true,replayable=true,mission_info=info(4,true,false,false)}
+details.detail_params=area
+details:_details_select()
+assert(marker==104 and closed and started==nil)
+
+local hints_ui=setmetatable({hintbar_vdo={set_hints=function(_,h) displayed=h end}}, {__index=Vdo_phone_missions})
+hints_ui:set_hints({replay=true,replay_cb=function() end})
+assert(displayed[1].btn_text_string=="Replay")
+''')
+    print("PASS: native Missions data/details retained; Replay filtering, empty state, hints and activation; stock completed-mission guard preserved.")
+
+
 def verify(game, installed=False):
     archive = Path(game) / "data/sr_vanguard/sr_vanguard.vpp_pc"
     with tempfile.TemporaryDirectory(prefix="srphone_verify_") as folder:
@@ -41,20 +122,23 @@ def verify(game, installed=False):
             inner_file.write_bytes(arc.read(stream, entry))
         inner = srasset.Archive(inner_file)
         with inner_file.open("rb") as stream:
-            sources = {e.name: inner.read(stream, e) for e in inner.entries if e.name in ("vdo_phone.lua", "vdo_cheat_app.lua")}
+            sources = {e.name: inner.read(stream, e) for e in inner.entries if e.name in ("vdo_phone.lua", "vdo_phone_missions.lua", "vdo_phone_missions_panel.lua")}
 
         lua = LuaRuntime(unpack_returned_tuples=True)
         patched = phone.edit_lua(sources["vdo_phone.lua"], phone.edit_phone).decode().replace("\r\n", "\n")
-        cheat = phone.edit_lua(sources["vdo_cheat_app.lua"], phone.edit_cheat).decode()
+        missions = phone.edit_lua(sources["vdo_phone_missions.lua"], phone.edit_missions).decode().replace("\r\n", "\n")
+        panel = phone.edit_lua(sources["vdo_phone_missions_panel.lua"], phone.edit_panel).decode().replace("\r\n", "\n")
         compile_lua = lua.eval("function(s) local f,e=load(s); assert(f,e) end")
         compile_lua(patched)
-        compile_lua(cheat)
+        compile_lua(missions)
+        compile_lua(panel)
         if installed:
             import stream_index
             index = phone.read_entry(str(archive), phone.DEFINITION["stream_index"].replace("/", "\\"))
             current = srasset.Archive(archive)
             assert struct.unpack_from("<I", current.header, 8)[0] == srasset.header_crc(current.header)
-            for container in (phone.CAMERA_STR2, phone.SLATE_STR2, phone.PHONE_STR2, phone.CHEAT_STR2):
+            checked = 0
+            for container in (phone.CAMERA_STR2, phone.SLATE_STR2, phone.PHONE_STR2, phone.MISSIONS_STR2, phone.PANEL_STR2):
                 nested_file = Path(folder) / "check.str2_pc"
                 pristine_file = Path(folder) / "original.str2_pc"
                 nested_file.write_bytes(phone.read_entry(str(archive), container))
@@ -64,24 +148,26 @@ def verify(game, installed=False):
                 # alone are insufficient if the engine streams using stale sizes.
                 stream_index.bind_bundle(index, container, nested)
                 assert struct.unpack_from("<I", nested.header, 8)[0] == srasset.header_crc(nested.header)
-                for name, edit in (("vdo_phone.lua", phone.edit_phone), ("vdo_cheat_app.lua", phone.edit_cheat)):
+                for name, edit in (("vdo_phone.lua", phone.edit_phone), ("vdo_phone_missions.lua", phone.edit_missions), ("vdo_phone_missions_panel.lua", phone.edit_panel), ("vdo_cheat_app.lua", None)):
                     entries = [e for e in nested.entries if e.name == name]
                     if not entries:
-                        assert container == phone.CHEAT_STR2 and name == "vdo_phone.lua"
                         continue
                     path = entries[0].path
                     raw = phone.read_entry(str(pristine_file), path)
                     actual = phone.read_entry(str(nested_file), path)
-                    assert actual == phone.edit_lua(raw, edit), (container, name)
+                    assert actual == (phone.edit_lua(raw, edit) if edit else raw), (container, name)
+                    checked += edit is not None
                     compile_lua(actual.decode())
                     stream_index.update_lua_resource_size(index, path, len(actual), len(actual))
-            print("PASS: installed script bytes match all seven expected replacements across four bundles; all archive header CRCs valid.")
-            print("PASS: all four stream-index bundle layouts and Lua resource sizes match the installed files.")
+            assert checked == 12
+            print("PASS: 12 installed script replacements across five bundles; Cheats unchanged; archive CRCs valid.")
+            print("PASS: all five stream-index bundle layouts and Lua resource sizes match the installed files.")
         lua.execute('''
 Vdo_phone = {}
 PHONE_REPLAY = "PHONE_REPLAY"
 PHONE_ROOT_MENU = "PHONE_ROOT_MENU"
 PHONE_CHEAT = "PHONE_CHEAT"
+PHONE_MISSIONS = "PHONE_MISSIONS"
 CELL_MISSIONS = 1
 CELL_SHARING = 2
 System_states = {[1]={state="MISSIONS"}, [2]={state="SHARING"}}
@@ -155,18 +241,20 @@ end
         lua.execute('''
 self = {states={}, portrait_grp_h=1}
 states = {
- [PHONE_CHEAT]={input_vdos={},transitions_to={[PHONE_ROOT_MENU]=1}},
+ [PHONE_MISSIONS]={input_vdos={},transitions_to={[PHONE_ROOT_MENU]=1}},
  [PHONE_ROOT_MENU]={transitions_to={}}
 }
 ''')
         lua.execute(phone.PHONE_STATE)
         lua.execute('''
-assert(states[PHONE_REPLAY] ~= states[PHONE_CHEAT])
-assert(states[PHONE_REPLAY].input_vdos ~= states[PHONE_CHEAT].input_vdos)
-assert(states[PHONE_REPLAY].transitions_to ~= states[PHONE_CHEAT].transitions_to)
+assert(states[PHONE_REPLAY] ~= states[PHONE_MISSIONS])
+assert(states[PHONE_REPLAY].input_vdos ~= states[PHONE_MISSIONS].input_vdos)
+assert(states[PHONE_REPLAY].transitions_to ~= states[PHONE_MISSIONS].transitions_to)
+assert(states[PHONE_REPLAY].stream_data.vdo_name == "Vdo_phone_missions")
 assert(states[PHONE_REPLAY].stream_data.prepare_args[1].mode == "replay")
 ''')
         print("PASS: retail Lua syntax; separate tile; Share preserved; refresh; select/highlight; 15/16/17/18/32 app pagination; independent screen state.")
+        verify_missions(lua, missions, panel)
 
 
 if __name__ == "__main__":

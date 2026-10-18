@@ -1,5 +1,12 @@
 # MODLOG: Saints Row (2022) cutscene replay
 
+## Native Missions interface for Replay (2026-10-17)
+- Replay now clones PHONE_MISSIONS with independent mutable state and streams Vdo_phone_missions. Its callbacks use the native close-app/close-phone contract.
+- Replaced cheat-screen edits with replay-mode edits in vdo_phone_missions.lua and vdo_phone_missions_panel.lua. Reuses native data entries, mission banners/details, input and hint bar; filters the native tree to completed replayable missions. Empty data yields a disabled native header row.
+- Details show Replay in this mode only. Activation rechecks completion and cannot-be-replayed, then uses the existing saintsbook start/marker path. Stock Missions retains its original completed-mission guard and data tree. Cheats receive no edits.
+- Discovery: three phone, four Missions, five panel script copies across five bundles. Compact repack and stream index update remain mandatory. Stub execution verifies native data retained, filtering, empty state, callbacks/hints, activation, stock completed guard, and phone tile/state behavior. Runtime presentation not yet confirmed by user.
+- Installed after restoring the previous patch with the game closed. All 12 script bytes, five bundle stream layouts, shared Lua source sizes, archive CRCs and native/replay behavior checks PASS. Archive size: 8,165,787,045 bytes. Cheats script copies are verified byte-identical to originals.
+
 ## Stream index mismatch corrected (2026-10-17)
 - **User confirmed the corrected app works in-game.** Completed-mission restart behavior has not been separately confirmed.
 - User confirmed patch applies but Replay remains absent. Latest runtime scan again found original phone Lua and no PHONE_REPLAY. File-level script equality was insufficient validation.

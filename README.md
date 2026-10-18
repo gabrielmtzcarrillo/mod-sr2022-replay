@@ -140,8 +140,8 @@ use it offline only. A Steam "verify files" restores the originals.
 > resolved the missing app. Completed-mission restart behavior has not been separately confirmed.
 
 The phone UI is Lua inside `data\sr_vanguard\sr_vanguard.vpp_pc`. The `patches/replay.json` definition adds a separate **Replay** tile to the
-phone's home screen, with its own phone state that reuses the cheat app's screen in a "replay" mode. Share and Cheats keep their stock entries.
-The list shows completed missions the game allows replaying; selecting one calls the game's own
+phone's home screen, with its own phone state using the native **Missions** screen in a "replay" mode. Share and Cheats keep their stock entries.
+Replay shows completed, replayable missions with the game's mission list, banners and detail panels. Open a mission's details and select **Replay** to call the game's own
 `mission_start_from_saintsbook`. It does not ship any game files: it edits your local copy.
 
 ```bat
@@ -149,8 +149,8 @@ patch_phone.bat   "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
 restore_phone.bat "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
 ```
 
-The patch updates all four bundles containing the phone scripts: the phone object, cheat app, phone slate, and default player camera.
-Earlier versions patched only the first two, leaving original scripts in the other two bundles. The menu also handles a second page when Replay pushes it past 16 visible apps.
+The patch updates the phone object, Missions screen, Missions panel, phone slate, and default player camera bundles, along with the stream index. The normal Missions app retains its stock filtering and completed-mission selection guard. Replay handles an empty list with a disabled placeholder row.
+The phone menu also handles a second page when Replay pushes it past 16 visible apps. The new Missions presentation still needs an in-game check.
 
 To build without installing, or run Lua checks against your game files:
 

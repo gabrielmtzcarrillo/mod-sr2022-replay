@@ -10,11 +10,13 @@ import patcher
 
 MANIFEST = Path(__file__).resolve().parent.parent / "patches/replay.json"
 DEFINITION = patcher.load_manifest(MANIFEST)
-PHONE_RULE, CHEAT_RULE = DEFINITION["rules"]
+PHONE_RULE, MISSIONS_RULE, PANEL_RULE = DEFINITION["rules"]
 MARK = PHONE_RULE["reject_if_contains"]
 OBJ = "data\\sr_vanguard\\interface\\objects\\"
 PHONE_STR2 = OBJ + "vdo_phone.vintdoc_pc.str2_pc"
 CHEAT_STR2 = OBJ + "vdo_cheat_app.vintdoc_pc.str2_pc"
+MISSIONS_STR2 = OBJ + "vdo_phone_missions.vintdoc_pc.str2_pc"
+PANEL_STR2 = OBJ + "vdo_phone_missions_panel.vintdoc_pc.str2_pc"
 SLATE_STR2 = "data\\sr_vanguard\\interface\\slates\\slate_phone.vintdoc_pc.str2_pc"
 CAMERA_STR2 = "data\\sr_vanguard\\spawnables\\camera\\game_default_player_camera.cprefab_pc.str2_pc"
 PHONE_STATE = next(patcher.text_value(e, "replace", MANIFEST.parent) for e in PHONE_RULE["edits"] if patcher.text_value(e, "find", MANIFEST.parent) == "\tself.states = states\n")
@@ -24,8 +26,12 @@ def edit_phone(text):
     return patcher.transform(text.encode(), PHONE_RULE, MANIFEST.parent).decode()
 
 
-def edit_cheat(text):
-    return patcher.transform(text.encode(), CHEAT_RULE, MANIFEST.parent).decode()
+def edit_missions(text):
+    return patcher.transform(text.encode(), MISSIONS_RULE, MANIFEST.parent).decode()
+
+
+def edit_panel(text):
+    return patcher.transform(text.encode(), PANEL_RULE, MANIFEST.parent).decode()
 
 
 def edit_lua(raw, edit):
