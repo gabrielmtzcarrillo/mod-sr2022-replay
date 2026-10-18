@@ -16,7 +16,8 @@ Run with uv (installs the lz4 dependency on first use):
 Archive format (version 17, little endian), as observed in the retail game:
 
     0x00 u32 magic 0x51890ACE        0x04 u32 version (17)
-    0x08 u32 id/crc (unknown, not recomputed)      0x0C u32 flags
+    0x08 u32 header crc: CRC-32 (poly 0xEDB88320, init 0, no final xor) of header bytes 0x0C..0x77; the game
+         checks it, so `patch` recomputes it      0x0C u32 flags
     0x10 u32 entry count   0x14 u32 dir count   0x18 u32 entry+dir table size   0x1C u32 string block size
     0x20 u64 file size     0x28 u64 sum of uncompressed sizes   0x30 u64 sum of stored sizes
     0x38 u64 unix timestamp   0x40 u64 header size (data starts here)
@@ -40,6 +41,27 @@ import struct
 import sys
 
 MAGIC = 0x51890ACE
+
+
+def _crc_table():
+    tab = []
+    for i in range(256):
+        c = i
+        for _ in range(8):
+            c = (c >> 1) ^ 0xEDB88320 if c & 1 else c >> 1
+        tab.append(c)
+    return tab
+
+
+_CRC = _crc_table()
+
+
+def header_crc(header):
+    """The game's archive id: CRC-32, init 0, no final xor, over header bytes 0x0C..0x77."""
+    c = 0
+    for b in header[0x0C:0x78]:
+        c = (c >> 8) ^ _CRC[(b ^ c) & 0xFF]
+    return c
 NONE = 0xFFFFFFFFFFFFFFFF
 ENTRY = struct.Struct("<6Q")
 ENTRIES_AT = 0x78
@@ -243,6 +265,7 @@ def cmd_patch(a):
             print("no changes")
             return
         struct.pack_into("<3Q", arc.header, 0x20, pos, arc.sum_size, arc.sum_stored)
+        struct.pack_into("<I", arc.header, 0x08, header_crc(arc.header))
         json.dump(meta, open(sc, "w"))
         f.flush()
         f.seek(0)

@@ -5,3 +5,4 @@
 *.addon64
 work/
 build/
+__pycache__/

@@ -1,9 +1,13 @@
-# SR2022 Cutscene Replay
+# SR2022 Replay
 
-A [ReShade](https://reshade.me) add-on for **Saints Row (2022)** that lets you replay the game's story cinematics from an
-in-game menu or from numpad hotkeys, in single-player/offline.
+Two experimental tools for replaying content in **Saints Row (2022)**, single-player/offline:
 
-It does not ship or extract any game files. It reads the game's own cinematic registry from memory and calls the game's
+1. **Cutscene Replay**: a [ReShade](https://reshade.me) add-on that replays the game's story cinematics from an overlay
+   menu or numpad hotkeys.
+2. **Phone "Replay" app**: a patch that adds a Replay tile to the in-game phone, listing completed missions you can
+   start again (see [below](#phone-replay-app)).
+
+The add-on does not ship or extract any game files. It reads the game's own cinematic registry from memory and calls the game's
 own `cinematic_play` code path (the same one its developer console command uses).
 
 > **Status: experimental.** The hook installs and the list of cinematics is read correctly (105 entries). Replaying real
@@ -85,15 +89,13 @@ anything is hooked. Reverse-engineering notes, offsets and dead ends are in [MOD
 | Path | Contents |
 |---|---|
 | `src/replay_addon.cpp` | the ReShade add-on (hook, registry reader, overlay) |
-| `tools/srasset.py` | archive extractor/patcher for the game's `.vpp_pc` files (see below) |
-| `build.bat` | build/install script |
+| `tools/srasset.py` | archive extractor/patcher for the game's `.vpp_pc` files (see [below](#asset-extractor--patcher)) |
+| `tools/build_phone_app.py` | builds the phone Replay app by editing the phone's Lua inside `sr_vanguard.vpp_pc` |
+| `patch_phone.bat`, `restore_phone.bat` | install / undo the phone Replay app |
+| `build.bat` | build/install script for the ReShade add-on |
+| `CREDITS.md` | third-party components |
 | `MODLOG.md` | engineering journal: findings, offsets, failed approaches |
 | `src/replay.cpp`, `src/dinput8.def` | abandoned `dinput8.dll` proxy attempt (crashed the launcher next to ReShade); not built |
-
-## Disclaimer
-
-Unofficial fan project, not affiliated with Deep Silver or Volition. You need your own copy of the game. The add-on works only
-offline/single-player and does not bypass any protection.
 
 ## Asset extractor / patcher
 
@@ -111,6 +113,47 @@ uv run tools\srasset.py restore "...\sr_boot.vpp_pc"
 
 Patching appends the new data (stored uncompressed) to the archive and updates the entry in place, so multi-GB archives are
 not rewritten; the original header and size are kept in `<archive>.srpatch.json` for `restore`. `.str2_pc` files are the same archive format and work with every command (or use `extract -r`); the files inside them
-(textures, Vint documents, scribe text) are extracted raw. The header's id field at 0x08 is not
-recomputed (its algorithm is unknown); patched archives have not been tried in-game yet. Back up the game folder first and
+(textures, Vint documents, scribe text) are extracted raw. The header's id field at 0x08 is a CRC-32 of header bytes 0x0C..0x77
+(found by decompiling the game's archive check) and is recomputed on every patch; patched archives have not been confirmed in-game yet. Back up the game folder first and
 use it offline only. A Steam "verify files" restores the originals.
+
+## Phone "Replay" app
+
+> **Status: experimental, not yet tested in game.** The edits apply cleanly to the shipped Lua and pass a syntax check;
+> whether the game accepts them and restarts a finished mission is still unverified.
+
+The phone UI is Lua inside `data\sr_vanguard\sr_vanguard.vpp_pc`. `tools/build_phone_app.py` adds a separate **Replay** tile to the
+phone's home screen, with its own phone state that reuses the cheat app's screen in a "replay" mode. Share and Cheats keep their stock entries.
+The list shows completed missions the game allows replaying; selecting one calls the game's own
+`mission_start_from_saintsbook`. It does not ship any game files: it edits your local copy.
+
+```bat
+patch_phone.bat   "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+restore_phone.bat "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+```
+
+The patch updates all four bundles containing the phone scripts: the phone object, cheat app, phone slate, and default player camera.
+Earlier versions patched only the first two, leaving original scripts in the other two bundles. The menu also handles a second page when Replay pushes it past 16 visible apps.
+
+To build without installing, or run Lua checks against your game files:
+
+```bat
+uv run tools\build_phone_app.py prepare "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --installed
+```
+
+Verification executes menu construction, selection and pagination with engine stubs; it does not establish that the app works in the running game.
+
+- Both scripts take the folder containing `SaintsRow_DX12.exe` (or read `SR5_DIR`), refuse to run while the game is open,
+  and need [uv](https://docs.astral.sh/uv/) (`winget install astral-sh.uv`).
+- Patching is append-only (see "Asset extractor / patcher" above); `restore_phone.bat` puts the archive back to its original bytes.
+  Steam's "verify files" also reverts it, and a game update that changes the Lua makes the patch refuse to apply.
+- Back up your saves first. Starting an already-completed mission may behave unexpectedly or affect progress.
+- Known gaps: labels are plain text rather than localization keys (they may render blank); cutscenes are not in the phone
+  app yet, they stay in the ReShade add-on.
+
+## Disclaimer
+
+Unofficial fan project, not affiliated with Deep Silver or Volition. You need your own copy of the game. These tools work only
+offline/single-player and does not bypass any protection.
