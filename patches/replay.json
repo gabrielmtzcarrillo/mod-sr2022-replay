@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "name": "Replay phone app (experimental)",
+  "archive": "data/sr_vanguard/sr_vanguard.vpp_pc",
+  "nested_layout": "compact",
+  "stream_index": "data/sr_vanguard/sr_vanguard.strh_pc",
+  "rules": [
+    {
+      "path": [
+        "*.str2_pc",
+        "*/vdo_phone.lua"
+      ],
+      "matches": 3,
+      "reject_if_contains": "SR2022_REPLAY_APP",
+      "edits": [
+        {
+          "find": "CELL_CHEAT\t\t\t\t\t\t= string_crci(\"cell_cheat\")\n",
+          "replace_file": "replay/phone-01-replace.lua"
+        },
+        {
+          "find_file": "replay/phone-02-find.lua",
+          "replace_file": "replay/phone-02-replace.lua"
+        },
+        {
+          "find": "\tself.states = states\n",
+          "replace_file": "replay/phone-03-replace.lua"
+        },
+        {
+          "find_file": "replay/phone-04-find.lua",
+          "replace_file": "replay/phone-04-replace.lua"
+        },
+        {
+          "find": "\t\t\tif list_size >= 32 then\n",
+          "replace_file": "replay/phone-05-replace.lua"
+        },
+        {
+          "find": "\t\t\telseif list_size >= 16 then\n",
+          "replace_file": "replay/phone-06-replace.lua"
+        },
+        {
+          "find": "\t\t\t\tlist_size = 1\n",
+          "replace_file": "replay/phone-07-replace.lua"
+        }
+      ],
+      "append_file": "replay/phone-methods.lua"
+    },
+    {
+      "path": [
+        "*.str2_pc",
+        "*/vdo_cheat_app.lua"
+      ],
+      "matches": 4,
+      "reject_if_contains": "SR2022_REPLAY_APP",
+      "edits": [
+        {
+          "find_file": "replay/cheat-01-find.lua",
+          "replace_file": "replay/cheat-01-replace.lua"
+        },
+        {
+          "find_file": "replay/cheat-02-find.lua",
+          "replace_file": "replay/cheat-02-replace.lua"
+        },
+        {
+          "find": "function Vdo_cheat_app:on_category_changed(idx, item_data)\n",
+          "replace_file": "replay/cheat-03-replace.lua"
+        },
+        {
+          "find_file": "replay/cheat-04-find.lua",
+          "replace_file": "replay/cheat-04-replace.lua"
+        }
+      ],
+      "append_file": "replay/cheat-methods.lua"
+    }
+  ]
+}

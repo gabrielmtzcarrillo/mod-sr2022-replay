@@ -1,5 +1,20 @@
 # MODLOG: Saints Row (2022) cutscene replay
 
+## Stream index mismatch corrected (2026-10-17)
+- **User confirmed the corrected app works in-game.** Completed-mission restart behavior has not been separately confirmed.
+- User confirmed patch applies but Replay remains absent. Latest runtime scan again found original phone Lua and no PHONE_REPLAY. File-level script equality was insufficient validation.
+- Decoded the required v33 `.strh_pc` subset: bundle metadata stores header size, sequential payload length, resource row count, and hash/CPU-stored/GPU-stored rows. CPU bitmap and following GPU bitmap share a row. All original stored lengths bind exactly for cheat38, phone146, slate166, camera456 resource rows. Shared Lua resource descriptors store uncompressed source size separately.
+- Earlier inner append-only patch left all this metadata describing original compressed blobs at sequential offsets. Added compact nested repacking preserving entry order and compression, plus validated `.strh_pc` bundle/size updates. No UI/progression changes in this fix.
+- Generic manifest options: nested_layout=compact, stream_index=archive entry path. `tools/stream_index.py` handles only validated v33 subset and rejects unsupported changed descriptor types. Outer archive still append-only; restore sidecar preserved.
+- Extended installed verifier to reject stale stream metadata. It FAILED on the old installed patch as expected; all byte/CRC/layout/Lua-size checks now PASS after restore and installation of corrected five-entry patch (four bundles + index). New archive size 8,165,249,568 bytes.
+- Eight patcher/repack tests and five stream-index tests PASS. Original-index identity and updated-index rebind verified against all four real bundles. Runtime success subsequently confirmed by the user.
+
+## General patcher (2026-10-17)
+- Added `tools/patcher.py` and `patch.bat`: manifest-defined archive selection, nested entry glob chains, duplicate discovery, text anchors, binary replacement, source hash checks, expected match counts, prepare/apply/status/restore, read-back and CRC verification, and rollback for handled write errors.
+- Moved Replay transformations into `patches/replay.json`. `build_phone_app.py` is now a compatibility adapter; old batch wrappers invoke the general patcher. No game-specific transforms remain in the general engine.
+- General Replay preparation on the installed archive's retained original directory found the expected three phone and four cheat scripts in four bundles. Game files were not modified by this refactor. Existing installed Replay verification still passes; runtime app visibility remains unresolved.
+- Synthetic tests exercise nested/compressed bundles, duplicate discovery, LF/CRLF, binary replacement, unchanged entries, exact restore, count/anchor/hash rejection, path bounds, deep nesting, and failed-write rollback. Manifest documentation: `patches/README.md`.
+
 Goal: in-game menu/hotkey to re-watch story cutscenes (offline, no save changes).
 Toolkit: D:\git\universal-modder (cloned, `bin\um.cmd`; uv installed via winget, at %LOCALAPPDATA%\Microsoft\WinGet\Links).
 

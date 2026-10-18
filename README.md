@@ -90,7 +90,9 @@ anything is hooked. Reverse-engineering notes, offsets and dead ends are in [MOD
 |---|---|
 | `src/replay_addon.cpp` | the ReShade add-on (hook, registry reader, overlay) |
 | `tools/srasset.py` | archive extractor/patcher for the game's `.vpp_pc` files (see [below](#asset-extractor--patcher)) |
-| `tools/build_phone_app.py` | builds the phone Replay app by editing the phone's Lua inside `sr_vanguard.vpp_pc` |
+| `tools/patcher.py`, `patch.bat` | general manifest-driven nested archive patcher |
+| `patches/replay.json` | experimental Replay app patch definition |
+| `tools/build_phone_app.py` | compatibility wrapper for the general patcher |
 | `patch_phone.bat`, `restore_phone.bat` | install / undo the phone Replay app |
 | `build.bat` | build/install script for the ReShade add-on |
 | `CREDITS.md` | third-party components |
@@ -98,6 +100,21 @@ anything is hooked. Reverse-engineering notes, offsets and dead ends are in [MOD
 | `src/replay.cpp`, `src/dinput8.def` | abandoned `dinput8.dll` proxy attempt (crashed the launcher next to ReShade); not built |
 
 ## Asset extractor / patcher
+
+Use the general patcher for repeatable mods defined in JSON. It discovers matching files in nested bundles, applies text edits or binary replacements, checks match counts, and verifies installed bytes and archive CRCs. Patch definitions contain the mod-specific edits; the patcher contains no phone logic.
+
+`path.bat` is an alias for `patch.bat`. Definitions can reference external Lua with `replace_file`, `find_file`, and `append_file`, or use `replacement_file` for a complete file. Replay's Lua is stored in `patches/replay/`.
+
+Replay also selects compact nested archives and updates the game's `.strh_pc` stream index. Updating archive entry offsets alone left the original sequential stream sizes intact, so earlier successful file checks did not establish that the engine would load the edited scripts. The installed verifier now checks stream layouts and shared Lua sizes too.
+
+```bat
+patch.bat prepare patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --pristine
+patch.bat apply patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+patch.bat status patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+patch.bat restore patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+```
+
+`prepare` leaves game files unchanged. `apply` refuses already-patched archives; `restore` undoes all recorded modifications in the selected archive. See [manifest format and examples](patches/README.md). The user confirmed the Replay app works in-game after the stream-index correction.
 
 `tools/srasset.py` lists, extracts and patches the game's `data\*\*.vpp_pc` archives (format notes are in the script header).
 It needs [uv](https://docs.astral.sh/uv/); the `lz4` dependency is installed automatically.
@@ -119,10 +136,10 @@ use it offline only. A Steam "verify files" restores the originals.
 
 ## Phone "Replay" app
 
-> **Status: experimental, not yet tested in game.** The edits apply cleanly to the shipped Lua and pass a syntax check;
-> whether the game accepts them and restarts a finished mission is still unverified.
+> **Status: experimental; user confirmed the app works in-game.** Compact bundles and matching stream-index records
+> resolved the missing app. Completed-mission restart behavior has not been separately confirmed.
 
-The phone UI is Lua inside `data\sr_vanguard\sr_vanguard.vpp_pc`. `tools/build_phone_app.py` adds a separate **Replay** tile to the
+The phone UI is Lua inside `data\sr_vanguard\sr_vanguard.vpp_pc`. The `patches/replay.json` definition adds a separate **Replay** tile to the
 phone's home screen, with its own phone state that reuses the cheat app's screen in a "replay" mode. Share and Cheats keep their stock entries.
 The list shows completed missions the game allows replaying; selecting one calls the game's own
 `mission_start_from_saintsbook`. It does not ship any game files: it edits your local copy.
@@ -138,7 +155,7 @@ Earlier versions patched only the first two, leaving original scripts in the oth
 To build without installing, or run Lua checks against your game files:
 
 ```bat
-uv run tools\build_phone_app.py prepare "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
+uv run tools\patcher.py prepare patches\replay.json "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --pristine
 uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr5"
 uv run tools\verify_phone_app.py "D:\SteamLibrary\steamapps\common\Saints Row\sr5" --installed
 ```

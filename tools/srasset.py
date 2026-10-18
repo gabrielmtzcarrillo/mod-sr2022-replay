@@ -36,6 +36,7 @@ can undo everything. Patch files you actually need; keep the game closed while p
 import argparse
 import fnmatch
 import json
+import io
 import os
 import struct
 import sys
@@ -84,9 +85,9 @@ class Entry:
 
 
 class Archive:
-    def __init__(self, path):
+    def __init__(self, path, header=None):
         self.path = path
-        with open(path, "rb") as f:
+        with (io.BytesIO(header) if header is not None else open(path, "rb")) as f:
             head = f.read(0x80)
             magic, version = struct.unpack_from("<II", head, 0)
             if magic != MAGIC:
@@ -144,6 +145,46 @@ def sidecar(path):
     return path + ".srpatch.json"
 
 
+def repack(path, replacements):
+    """Rebuild a small nested archive in entry order, retaining compression.
+
+    Streaming indexes describe sequential payloads, so moving only selected
+    members to the end is insufficient for stream-managed bundles.
+    """
+    import lz4.frame
+    arc = Archive(path)
+    payload = bytearray()
+    total_size = 0
+    with open(path, "rb") as stream:
+        for entry in arc.entries:
+            if entry.path in replacements:
+                raw = replacements[entry.path].read_bytes()
+                stored = lz4.frame.compress(raw, block_size=lz4.frame.BLOCKSIZE_MAX256KB,
+                    compression_level=9, store_size=False) if entry.compressed else raw
+                size = len(raw)
+                csize = len(stored) if entry.compressed else NONE
+            else:
+                stream.seek(arc.data_start + entry.off)
+                stored = stream.read(entry.stored)
+                if len(stored) != entry.stored:
+                    raise ValueError(f"truncated entry: {entry.path}")
+                size, csize = entry.size, entry.csize
+            struct.pack_into("<4Q", arc.header, ENTRIES_AT + entry.index * ENTRY.size + 16,
+                len(payload), size, csize, entry.flags)
+            payload.extend(stored)
+            total_size += size
+    struct.pack_into("<3Q", arc.header, 0x20, arc.data_start + len(payload), total_size, len(payload))
+    struct.pack_into("<I", arc.header, 8, header_crc(arc.header))
+    with open(path, "wb") as stream:
+        stream.write(arc.header)
+        stream.write(payload)
+    check = Archive(path)
+    with open(path, "rb") as stream:
+        for entry in check.entries:
+            if entry.path in replacements and check.read(stream, entry) != replacements[entry.path].read_bytes():
+                raise ValueError(f"repack read-back failed: {entry.path}")
+
+
 def cmd_list(a):
     arc = Archive(a.archive)
     for e in arc.select(a.filter):
@@ -187,7 +228,8 @@ def cmd_status(a):
     arc = Archive(a.archive)
     sc = sidecar(a.archive)
     if os.path.exists(sc):
-        meta = json.load(open(sc))
+        with open(sc) as metadata_stream:
+            meta = json.load(metadata_stream)
         print(f"patched: yes, {len(meta['patched'])} entries, grew {arc.file_size - meta['orig_size']} bytes")
         for p in meta["patched"]:
             print("  " + p)
@@ -199,7 +241,8 @@ def cmd_restore(a):
     sc = sidecar(a.archive)
     if not os.path.exists(sc):
         raise SystemExit("nothing to restore (no .srpatch.json next to the archive)")
-    meta = json.load(open(sc))
+    with open(sc) as metadata_stream:
+        meta = json.load(metadata_stream)
     with open(a.archive, "r+b") as f:
         f.seek(0)
         f.write(bytes.fromhex(meta["orig_header"]))
@@ -210,7 +253,7 @@ def cmd_restore(a):
 
 def cmd_patch(a):
     arc = Archive(a.archive)
-    by_path = {e.path.lower(): e for e in arc.entries}
+    by_path = {e.path.replace("/", "\\").lower(): e for e in arc.entries}
     jobs = []  # (entry, local file)
     if a.src:
         for root, _, files in os.walk(a.src):
@@ -233,7 +276,8 @@ def cmd_patch(a):
 
     sc = sidecar(a.archive)
     if os.path.exists(sc):
-        meta = json.load(open(sc))
+        with open(sc) as metadata_stream:
+            meta = json.load(metadata_stream)
     else:
         meta = {"orig_size": arc.file_size, "orig_header": bytes(arc.header).hex(), "patched": []}
 
@@ -244,7 +288,8 @@ def cmd_patch(a):
             raise SystemExit(f"file size {pos} does not match header {arc.file_size}; refusing to patch")
         done = 0
         for e, local in jobs:
-            data = open(local, "rb").read()
+            with open(local, "rb") as local_stream:
+                data = local_stream.read()
             if arc.read(f, e) == data:
                 continue
             f.seek(pos)
@@ -266,7 +311,8 @@ def cmd_patch(a):
             return
         struct.pack_into("<3Q", arc.header, 0x20, pos, arc.sum_size, arc.sum_stored)
         struct.pack_into("<I", arc.header, 0x08, header_crc(arc.header))
-        json.dump(meta, open(sc, "w"))
+        with open(sc, "w") as metadata_stream:
+            json.dump(meta, metadata_stream)
         f.flush()
         f.seek(0)
         f.write(arc.header)

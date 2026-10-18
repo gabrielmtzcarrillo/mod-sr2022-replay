@@ -12,5 +12,5 @@ if not exist "%GAME%\data\sr_vanguard\sr_vanguard.vpp_pc" (echo Not a Saints Row
 tasklist /fi "imagename eq SaintsRow_DX12.exe" 2>nul | find /i "SaintsRow_DX12.exe" >nul && (echo Close the game first. & exit /b 1)
 where uv >nul 2>nul || set "PATH=%PATH%;%LOCALAPPDATA%\Microsoft\WinGet\Links"
 where uv >nul 2>nul || (echo uv not found. Install it: winget install astral-sh.uv & exit /b 1)
-uv run "%~dp0tools\build_phone_app.py" uninstall "%GAME%"
+uv run "%~dp0tools\patcher.py" restore "%~dp0patches\replay.json" "%GAME%"
 exit /b %ERRORLEVEL%

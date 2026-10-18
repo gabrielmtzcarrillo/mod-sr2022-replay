@@ -14,5 +14,5 @@ tasklist /fi "imagename eq SaintsRow_DX12.exe" 2>nul | find /i "SaintsRow_DX12.e
 where uv >nul 2>nul || set "PATH=%PATH%;%LOCALAPPDATA%\Microsoft\WinGet\Links"
 where uv >nul 2>nul || (echo uv not found. Install it: winget install astral-sh.uv & exit /b 1)
 echo Patching "%GAME%" ...
-uv run "%~dp0tools\build_phone_app.py" install "%GAME%"
+uv run "%~dp0tools\patcher.py" apply "%~dp0patches\replay.json" "%GAME%"
 exit /b %ERRORLEVEL%

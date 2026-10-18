@@ -50,6 +50,8 @@ def verify(game, installed=False):
         compile_lua(patched)
         compile_lua(cheat)
         if installed:
+            import stream_index
+            index = phone.read_entry(str(archive), phone.DEFINITION["stream_index"].replace("/", "\\"))
             current = srasset.Archive(archive)
             assert struct.unpack_from("<I", current.header, 8)[0] == srasset.header_crc(current.header)
             for container in (phone.CAMERA_STR2, phone.SLATE_STR2, phone.PHONE_STR2, phone.CHEAT_STR2):
@@ -58,6 +60,9 @@ def verify(game, installed=False):
                 nested_file.write_bytes(phone.read_entry(str(archive), container))
                 pristine_file.write_bytes(phone.read_entry(str(archive), container, pristine=True))
                 nested = srasset.Archive(nested_file)
+                # This catches the old patch's false positive: readable scripts
+                # alone are insufficient if the engine streams using stale sizes.
+                stream_index.bind_bundle(index, container, nested)
                 assert struct.unpack_from("<I", nested.header, 8)[0] == srasset.header_crc(nested.header)
                 for name, edit in (("vdo_phone.lua", phone.edit_phone), ("vdo_cheat_app.lua", phone.edit_cheat)):
                     entries = [e for e in nested.entries if e.name == name]
@@ -69,7 +74,9 @@ def verify(game, installed=False):
                     actual = phone.read_entry(str(nested_file), path)
                     assert actual == phone.edit_lua(raw, edit), (container, name)
                     compile_lua(actual.decode())
+                    stream_index.update_lua_resource_size(index, path, len(actual), len(actual))
             print("PASS: installed script bytes match all seven expected replacements across four bundles; all archive header CRCs valid.")
+            print("PASS: all four stream-index bundle layouts and Lua resource sizes match the installed files.")
         lua.execute('''
 Vdo_phone = {}
 PHONE_REPLAY = "PHONE_REPLAY"
